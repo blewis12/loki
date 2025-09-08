@@ -291,8 +291,8 @@ type seriesStoreEntries interface {
 // v9Entries adds a layer of indirection between labels -> series -> chunks.
 type v9Entries struct{}
 
-func (v9Entries) GetLabelWriteEntries(bucket Bucket, metricName string, labels labels.Labels, _ string) ([]Entry, error) {
-	seriesID := labelsSeriesID(labels)
+func (v9Entries) GetLabelWriteEntries(bucket Bucket, metricName string, lbl labels.Labels, _ string) ([]Entry, error) {
+	seriesID := labelsSeriesID(lbl)
 
 	entries := []Entry{
 		// Entry for metricName -> seriesID
@@ -306,18 +306,19 @@ func (v9Entries) GetLabelWriteEntries(bucket Bucket, metricName string, labels l
 
 	// Entries for metricName:labelName -> hash(value):seriesID
 	// We use a hash of the value to limit its length.
-	for _, v := range labels {
-		if v.Name == model.MetricNameLabel {
-			continue
+	lbl.Range(func(l labels.Label) {
+		if l.Name == model.MetricNameLabel {
+			return // continue
 		}
-		valueHash := sha256bytes(v.Value)
+
+		valueHash := sha256bytes(l.Value)
 		entries = append(entries, Entry{
 			TableName:  bucket.tableName,
-			HashValue:  fmt.Sprintf("%s:%s:%s", bucket.hashKey, metricName, v.Name),
+			HashValue:  fmt.Sprintf("%s:%s:%s", bucket.hashKey, metricName, l.Name),
 			RangeValue: encodeRangeKey(labelSeriesRangeKeyV1, valueHash, seriesID, nil),
-			Value:      []byte(v.Value),
+			Value:      []byte(l.Value),
 		})
-	}
+	})
 
 	return entries, nil
 }
@@ -392,8 +393,8 @@ type v10Entries struct {
 	rowShards uint32
 }
 
-func (s v10Entries) GetLabelWriteEntries(bucket Bucket, metricName string, labels labels.Labels, _ string) ([]Entry, error) {
-	seriesID := labelsSeriesID(labels)
+func (s v10Entries) GetLabelWriteEntries(bucket Bucket, metricName string, lbl labels.Labels, _ string) ([]Entry, error) {
+	seriesID := labelsSeriesID(lbl)
 
 	// read first 32 bits of the hash and use this to calculate the shard
 	shard := binary.BigEndian.Uint32(seriesID) % s.rowShards
@@ -410,18 +411,18 @@ func (s v10Entries) GetLabelWriteEntries(bucket Bucket, metricName string, label
 
 	// Entries for metricName:labelName -> hash(value):seriesID
 	// We use a hash of the value to limit its length.
-	for _, v := range labels {
-		if v.Name == model.MetricNameLabel {
-			continue
+	lbl.Range(func(l labels.Label) {
+		if l.Name == model.MetricNameLabel {
+			return // continue
 		}
-		valueHash := sha256bytes(v.Value)
+		valueHash := sha256bytes(l.Value)
 		entries = append(entries, Entry{
 			TableName:  bucket.tableName,
-			HashValue:  fmt.Sprintf("%02d:%s:%s:%s", shard, bucket.hashKey, metricName, v.Name),
+			HashValue:  fmt.Sprintf("%02d:%s:%s:%s", shard, bucket.hashKey, metricName, l.Name),
 			RangeValue: encodeRangeKey(labelSeriesRangeKeyV1, valueHash, seriesID, nil),
-			Value:      []byte(v.Value),
+			Value:      []byte(l.Value),
 		})
-	}
+	})
 
 	return entries, nil
 }
@@ -526,19 +527,21 @@ type v11Entries struct {
 	v10Entries
 }
 
-func (s v11Entries) GetLabelWriteEntries(bucket Bucket, metricName string, labels labels.Labels, _ string) ([]Entry, error) {
-	seriesID := labelsSeriesID(labels)
+func (s v11Entries) GetLabelWriteEntries(bucket Bucket, metricName string, lbl labels.Labels, _ string) ([]Entry, error) {
+	seriesID := labelsSeriesID(lbl)
 
 	// read first 32 bits of the hash and use this to calculate the shard
 	shard := binary.BigEndian.Uint32(seriesID) % s.rowShards
 
-	labelNames := make([]string, 0, len(labels))
-	for _, l := range labels {
+	labelNames := make([]string, 0, lbl.Len())
+
+	lbl.Range(func(l labels.Label) {
 		if l.Name == model.MetricNameLabel {
-			continue
+			return // continue
 		}
 		labelNames = append(labelNames, l.Name)
-	}
+	})
+
 	data, err := jsoniter.ConfigFastest.Marshal(labelNames)
 	if err != nil {
 		return nil, err
@@ -562,18 +565,18 @@ func (s v11Entries) GetLabelWriteEntries(bucket Bucket, metricName string, label
 
 	// Entries for metricName:labelName -> hash(value):seriesID
 	// We use a hash of the value to limit its length.
-	for _, v := range labels {
-		if v.Name == model.MetricNameLabel {
-			continue
+	lbl.Range(func(l labels.Label) {
+		if l.Name == model.MetricNameLabel {
+			return // continue
 		}
-		valueHash := sha256bytes(v.Value)
+		valueHash := sha256bytes(l.Value)
 		entries = append(entries, Entry{
 			TableName:  bucket.tableName,
-			HashValue:  fmt.Sprintf("%02d:%s:%s:%s", shard, bucket.hashKey, metricName, v.Name),
+			HashValue:  fmt.Sprintf("%02d:%s:%s:%s", shard, bucket.hashKey, metricName, l.Name),
 			RangeValue: encodeRangeKey(labelSeriesRangeKeyV1, valueHash, seriesID, nil),
-			Value:      []byte(v.Value),
+			Value:      []byte(l.Value),
 		})
-	}
+	})
 
 	return entries, nil
 }

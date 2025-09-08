@@ -21,7 +21,8 @@ import (
 var (
 	structuredMetadataPool = sync.Pool{
 		New: func() interface{} {
-			return make(labels.Labels, 0, 8)
+			sb := labels.NewScratchBuilder(8)
+			return sb.Labels()
 		},
 	}
 	errSymbolizerReadOnly = errors.New("writes not allowed when symbolizer is in read-only mode")

@@ -43,7 +43,7 @@ type Stream struct {
 // Reset zeroes all values in the stream struct so it can be reused.
 func (s *Stream) Reset() {
 	s.ID = 0
-	s.Labels = nil
+	s.Labels = labels.EmptyLabels()
 	s.MinTimestamp = time.Time{}
 	s.MaxTimestamp = time.Time{}
 	s.UncompressedSize = 0
@@ -184,9 +184,9 @@ func (b *Builder) addStream(hash uint64, streamLabels labels.Labels) *Stream {
 	// ordering.
 	sort.Sort(streamLabels)
 
-	for _, lbl := range streamLabels {
-		b.currentLabelsSize += len(lbl.Value)
-	}
+	streamLabels.Range(func(l labels.Label) {
+		b.currentLabelsSize += len(l.Value)
+	})
 
 	newStream := streamPool.Get().(*Stream)
 	newStream.Reset()
@@ -305,12 +305,19 @@ func (b *Builder) encodeTo(enc *encoder) error {
 		_ = rowsCountBuilder.Append(i, dataset.Int64Value(int64(stream.Rows)))
 		_ = uncompressedSizeBuilder.Append(i, dataset.Int64Value(stream.UncompressedSize))
 
-		for _, label := range stream.Labels {
-			builder, err := getLabelColumn(label.Name)
+		var err error
+		stream.Labels.Range(func(l labels.Label) {
+			var builder *dataset.ColumnBuilder
+			builder, err = getLabelColumn(l.Name)
+
 			if err != nil {
-				return fmt.Errorf("getting label column: %w", err)
+				err = fmt.Errorf("getting label column: %w", err)
 			}
-			_ = builder.Append(i, dataset.ByteArrayValue([]byte(label.Value)))
+			_ = builder.Append(i, dataset.ByteArrayValue([]byte(l.Value)))
+		})
+
+		if err != nil {
+			return err
 		}
 	}
 

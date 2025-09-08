@@ -73,6 +73,7 @@ func (e *Entry) UnmarshalJSON(data []byte) error {
 			// If it doesn't, we deserialize the object into the structured metadata labels.
 			var structuredMetadata labels.Labels
 			var parsed labels.Labels
+
 			if err := jsonparser.ObjectEach(value, func(key []byte, value []byte, dataType jsonparser.ValueType, _ int) error {
 				if dataType == jsonparser.Object {
 					if string(key) == "structuredMetadata" {
@@ -227,16 +228,20 @@ func (EntryEncoder) Encode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteRaw(`"`)
 	stream.WriteMore()
 	stream.WriteStringWithHTMLEscaped(e.Line)
-	if len(e.StructuredMetadata) > 0 {
+	if e.StructuredMetadata.Len() > 0 {
 		stream.WriteMore()
 		stream.WriteObjectStart()
-		for i, lbl := range e.StructuredMetadata {
+
+		i := 0
+		e.StructuredMetadata.Range(func(l labels.Label) {
 			if i > 0 {
 				stream.WriteMore()
 			}
-			stream.WriteObjectField(lbl.Name)
-			stream.WriteStringWithHTMLEscaped(lbl.Value)
-		}
+			stream.WriteObjectField(l.Name)
+			stream.WriteStringWithHTMLEscaped(l.Value)
+
+			i++
+		})
 		stream.WriteObjectEnd()
 	}
 	stream.WriteArrayEnd()
